@@ -196,7 +196,7 @@ class ModelsCommand extends Command
     protected function getArguments()
     {
         return [
-          ['model', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, 'Which models to include', []],
+            ['model', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, 'Which models to include', []],
         ];
     }
 
@@ -208,21 +208,21 @@ class ModelsCommand extends Command
     protected function getOptions()
     {
         return [
-          ['filename', 'F', InputOption::VALUE_OPTIONAL, 'The path to the helper file'],
-          ['dir', 'D', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY,
-              'The model dir, supports glob patterns', [], ],
-          ['write', 'W', InputOption::VALUE_NONE, 'Write to Model file'],
-          ['write-mixin', 'M', InputOption::VALUE_NONE,
-              "Write models to {$this->filename} and adds @mixin to each model, avoiding IDE duplicate declaration warnings",
-          ],
-          ['nowrite', 'N', InputOption::VALUE_NONE, 'Don\'t write to Model file'],
-          ['reset', 'R', InputOption::VALUE_NONE, 'Remove the original phpdocs instead of appending'],
-          ['smart-reset', 'r', InputOption::VALUE_NONE, 'Refresh the properties/methods list, but keep the text'],
-          ['phpstorm-noinspections', 'p', InputOption::VALUE_NONE,
-              'Add PhpFullyQualifiedNameUsageInspection and PhpUnnecessaryFullyQualifiedNameInspection PHPStorm ' .
-              'noinspection tags',
-          ],
-          ['ignore', 'I', InputOption::VALUE_OPTIONAL, 'Which models to ignore', ''],
+            ['filename', 'F', InputOption::VALUE_OPTIONAL, 'The path to the helper file'],
+            ['dir', 'D', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY,
+                'The model dir, supports glob patterns', [],],
+            ['write', 'W', InputOption::VALUE_NONE, 'Write to Model file'],
+            ['write-mixin', 'M', InputOption::VALUE_NONE,
+                "Write models to {$this->filename} and adds @mixin to each model, avoiding IDE duplicate declaration warnings",
+            ],
+            ['nowrite', 'N', InputOption::VALUE_NONE, 'Don\'t write to Model file'],
+            ['reset', 'R', InputOption::VALUE_NONE, 'Remove the original phpdocs instead of appending'],
+            ['smart-reset', 'r', InputOption::VALUE_NONE, 'Refresh the properties/methods list, but keep the text'],
+            ['phpstorm-noinspections', 'p', InputOption::VALUE_NONE,
+                'Add PhpFullyQualifiedNameUsageInspection and PhpUnnecessaryFullyQualifiedNameInspection PHPStorm ' .
+                'noinspection tags',
+            ],
+            ['ignore', 'I', InputOption::VALUE_OPTIONAL, 'Which models to ignore', ''],
         ];
     }
 
@@ -231,6 +231,7 @@ class ModelsCommand extends Command
         $output = "<?php
 
 // @formatter:off
+// phpcs:ignoreFile
 /**
  * A helper file for your Eloquent Models
  * Copy the phpDocs from this file to the correct Model,
@@ -1055,9 +1056,11 @@ class ModelsCommand extends Command
         }
 
         $classname = $this->write_mixin ? $mixinClassName : $classname;
-        $output = "namespace {$namespace}{\n{$docComment}\n\t{$keyword}class {$classname} ";
 
-        if (!$this->write_mixin) {
+        $allowDynamicAttributes = $this->write_mixin ? "#[\AllowDynamicProperties]\n\t" : '';
+        $output = "namespace {$namespace}{\n{$docComment}\n\t{$keyword}{$allowDynamicAttributes}class {$classname} ";
+
+        if (! $this->write_mixin) {
             $output .= "extends \Eloquent ";
 
             if ($interfaceNames) {
@@ -1257,10 +1260,37 @@ class ModelsCommand extends Command
         $phpdoc = new DocBlock($reflection, $context);
 
         if ($phpdoc->hasTag('return')) {
+            $returnTag = $phpdoc->getTagsByName('return')[0];
+
+            if ($typeAlias = $this->extractTypeAlias($returnTag->getContent(), $context->getNamespaceAliases())) {
+                return $typeAlias;
+            }
+
             $type = $phpdoc->getTagsByName('return')[0]->getType();
         }
 
         return $type;
+    }
+
+    /**
+     * @param string $typeAlias
+     * @param array $namespaceAliases
+     * @return string|null
+     */
+    private function extractTypeAlias(string $typeAlias, array $namespaceAliases): string|null {
+        $matches = [];
+        preg_match('/(\w+)(<.*>)/', $typeAlias, $matches);
+        $matchCount = count($matches);
+
+        if ($matchCount === 0 || $matchCount === 1) {
+            return null;
+        }
+
+        if (empty($namespaceAliases[$matches[1]])) {
+            return null;
+        }
+
+        return $namespaceAliases[$matches[1]].($matches[2] ?? '');
     }
 
     protected function getReturnTypeFromReflection(\ReflectionMethod $reflection): ?string
